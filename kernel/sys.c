@@ -77,6 +77,10 @@
 
 #include <trace/hooks/sys.h>
 
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
+
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a, b)	(-EINVAL)
 #endif
@@ -1245,7 +1249,14 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 	struct new_utsname tmp;
 
 	down_read(&uts_sem);
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+	if (likely(!susfs_spoof_uname(&tmp)))
+		goto bypass_orig_flow;
+#endif
 	memcpy(&tmp, utsname(), sizeof(tmp));
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+bypass_orig_flow:
+#endif
 	up_read(&uts_sem);
 	if (copy_to_user(name, &tmp, sizeof(tmp)))
 		return -EFAULT;
@@ -2451,6 +2462,99 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	error = security_task_prctl(option, arg2, arg3, arg4, arg5);
 	if (error != -ENOSYS)
 		return error;
+
+#ifdef CONFIG_KSU_SUSFS
+	if (option == 0xDEADBEEF) {
+		int __user *user_error = (int __user *)arg5;
+		int ksu_error = -1;
+
+		/* userspace tool always passes this, but be tolerant */
+		if (!user_error)
+			return 0;
+
+		if (current_uid().val != 0) {
+			ksu_error = 1;
+			if (copy_to_user(user_error, &ksu_error, sizeof(ksu_error)))
+				return -EFAULT;
+			return 0;
+		}
+
+		switch (arg2) {
+		case CMD_SUSFS_ADD_SUS_PATH:
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+			ksu_error = susfs_add_sus_path(
+				(struct st_susfs_sus_path __user *)arg3);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_ADD_SUS_MOUNT:
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+			ksu_error = susfs_add_sus_mount(
+				(struct st_susfs_sus_mount __user *)arg3);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_ADD_SUS_KSTAT:
+		case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+			ksu_error = susfs_add_sus_kstat(
+				(struct st_susfs_sus_kstat __user *)arg3);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_UPDATE_SUS_KSTAT:
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+			ksu_error = susfs_update_sus_kstat(
+				(struct st_susfs_sus_kstat __user *)arg3);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_ADD_TRY_UMOUNT:
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+			ksu_error = susfs_add_try_umount(
+				(struct st_susfs_try_umount __user *)arg3);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_SET_UNAME:
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+			ksu_error = susfs_set_uname(
+				(struct st_susfs_uname __user *)arg3);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_ENABLE_LOG:
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+			susfs_set_log(!!arg3);
+			ksu_error = 0;
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_SUS_SU:
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
+			ksu_error = susfs_sus_su((struct st_sus_su __user *)arg3);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		default:
+			ksu_error = -1;
+			break;
+		}
+
+		if (copy_to_user(user_error, &ksu_error, sizeof(ksu_error)))
+			return -EFAULT;
+
+		return 0;
+	}
+#endif
 
 	error = 0;
 	switch (option) {
