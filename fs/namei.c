@@ -40,7 +40,11 @@
 #include <linux/init_task.h>
 #include <linux/uaccess.h>
 
+#include "pnode.h"
 #include "internal.h"
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+#include <linux/susfs.h>
+#endif
 #include "mount.h"
 
 #define CREATE_TRACE_POINTS
@@ -3622,6 +3626,12 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 	if (unlikely(filp == ERR_PTR(-ESTALE)))
 		filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
 	restore_nameidata();
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	if (!IS_ERR(filp) && likely(current_cred()->user->android_kabi_reserved1 & 16777216) && unlikely(filp->f_path.dentry->d_inode->i_state & 16777216)) {
+		fput(filp);
+		return ERR_PTR(-ENOENT);
+	}
+#endif
 	return filp;
 }
 

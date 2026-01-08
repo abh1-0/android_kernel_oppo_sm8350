@@ -35,6 +35,10 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+#include <linux/susfs.h>
+#endif
+
 int do_truncate(struct dentry *dentry, loff_t length, unsigned int time_attrs,
 	struct file *filp)
 {
@@ -400,6 +404,14 @@ retry:
 		goto out;
 
 	inode = d_backing_inode(path.dentry);
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	if (likely(current_cred()->user->android_kabi_reserved1 & 16777216) && unlikely(inode->i_state & 16777216)) {
+		path_put(&path);
+		res = -ENOENT;
+		goto out;
+	}
+#endif
 
 	if ((mode & MAY_EXEC) && S_ISREG(inode->i_mode)) {
 		/*
