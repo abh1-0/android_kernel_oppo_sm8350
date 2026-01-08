@@ -8,6 +8,17 @@
 #include <linux/hashtable.h>
 
 /********/
+#define SUSFS_VERSION "v1.5.5"
+
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+extern bool susfs_is_log_enabled;
+#define SUSFS_LOGI(fmt, ...) do { if (susfs_is_log_enabled) pr_info("susfs: " fmt, ##__VA_ARGS__); } while (0)
+#define SUSFS_LOGE(fmt, ...) pr_err("susfs: " fmt, ##__VA_ARGS__)
+#else
+#define SUSFS_LOGI(fmt, ...)
+#define SUSFS_LOGE(fmt, ...)
+#endif
+
 /* ENUM */
 /********/
 /* shared with userspace ksu_susfs tool */
@@ -19,6 +30,8 @@
 #define CMD_SUSFS_ADD_TRY_UMOUNT 0x55580
 #define CMD_SUSFS_SET_UNAME 0x55590
 #define CMD_SUSFS_ENABLE_LOG 0x555a0
+#define CMD_SUSFS_SHOW_VERSION 0x555e1
+#define CMD_SUSFS_SHOW_ENABLED_FEATURES 0x555e2
 #define CMD_SUSFS_SUS_SU 0x60000
 
 #define SUSFS_MAX_LEN_PATHNAME 256 // 256 should address many paths already unless you are doing some strange experimental stuff, then set your own desired length
@@ -42,8 +55,15 @@
 #define INODE_STATE_SUS_KSTAT 67108864 // 1 << 26
 
 #define TASK_STRUCT_KABI1_IS_ZYGOTE 1 // 1 << 0
+#define TASK_STRUCT_IS_ZYGOTE (1UL << 1)
 
 #define USER_STRUCT_KABI1_NON_ROOT_USER_APP_PROFILE 16777216 // 1 << 24, for distinguishing root/no-root granted user app process
+
+#define INODE_STATE_OPEN_REDIRECT 134217728 // 1 << 27
+#define TASK_STRUCT_NON_ROOT_USER_APP_PROC (1UL << 0)
+#define DEFAULT_SUS_MNT_ID 50000
+#define DEFAULT_SUS_MNT_GROUP_ID 50000
+#define DEFAULT_SUS_MNT_ID_FOR_KSU_PROC_UNSHARE 49999
 
 /*********/
 /* MACRO */
@@ -107,6 +127,20 @@ struct st_susfs_sus_kstat_list {
 };
 #endif
 
+#define TRY_UMOUNT_DEFAULT 0
+#define TRY_UMOUNT_DETACH 1
+#define MAGIC_MOUNT_WORKDIR "/data/adb/ksu/workdir"
+#define SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE 4096
+
+/* open_redirect */
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+struct st_susfs_open_redirect {
+	unsigned long                    target_ino;
+	char                             target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	char                             redirected_pathname[SUSFS_MAX_LEN_PATHNAME];
+};
+#endif
+
 /* try_umount */
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
 struct st_susfs_try_umount {
@@ -130,8 +164,11 @@ struct st_susfs_uname {
 
 /* sus_su */
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
+#define SUS_SU_DISABLED 0
+#define SUS_SU_WITH_HOOKS 1
+#define SUS_SU_WITH_OVERLAY 2
 struct st_sus_su {
-	bool        enabled;
+	int         mode;
 	char        drv_path[256];
 	int         maj_dev_num;
 };
@@ -153,6 +190,13 @@ int susfs_add_sus_mount(struct st_susfs_sus_mount* __user user_info);
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info);
 int susfs_update_sus_kstat(struct st_susfs_sus_kstat* __user user_info);
+struct kstat;
+void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat);
+void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino);
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info);
+struct filename* susfs_get_redirected_path(unsigned long ino);
 #endif
 /* try_umount */
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT

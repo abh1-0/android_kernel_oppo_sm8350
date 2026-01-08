@@ -33,6 +33,9 @@
 
 #include "pnode.h"
 #include "internal.h"
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#include <linux/susfs.h>
+#endif
 
 
 
@@ -113,6 +116,12 @@ static int mnt_alloc_id(struct mount *mnt)
 	if (res < 0)
 		return res;
 	mnt->mnt_id = res;
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	if (likely(current->susfs_task_state & TASK_STRUCT_IS_ZYGOTE)) {
+		mnt->mnt.susfs_mnt_id_backup = mnt->mnt_id;
+		mnt->mnt_id = current->susfs_last_fake_mnt_id++;
+	}
+#endif
 	return 0;
 }
 
@@ -131,6 +140,11 @@ static int mnt_alloc_group_id(struct mount *mnt)
 	if (res < 0)
 		return res;
 	mnt->mnt_group_id = res;
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	if (likely(current->susfs_task_state & TASK_STRUCT_IS_ZYGOTE)) {
+		mnt->mnt.susfs_mnt_group_id_backup = DEFAULT_SUS_MNT_GROUP_ID;
+	}
+#endif
 	return 0;
 }
 
@@ -971,8 +985,8 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	// here we reorder the mounts that are added after copy_mnt_ns();
 	// make sure it is zygote process
-	if (likely(current->android_kabi_reserved1 & 1)) {
-		mnt->mnt.android_kabi_reserved1 = current->android_kabi_reserved2++;
+	if (likely(current->susfs_task_state & TASK_STRUCT_IS_ZYGOTE)) {
+		mnt->mnt.susfs_mnt_id_backup = current->susfs_last_fake_mnt_id++;
 	}
 	// Seems no need to reorder the mnt group id for mounts after copy_mnt_ns();
 #endif
@@ -1082,14 +1096,14 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	// here we reorder the mounts that are added after copy_mnt_ns();
 	// make sure it is zygote process
-	if (likely(current->android_kabi_reserved1 & 1)) {
-		mnt->mnt.android_kabi_reserved1 = current->android_kabi_reserved2++;
+	if (likely(current->susfs_task_state & TASK_STRUCT_IS_ZYGOTE)) {
+		mnt->mnt.susfs_mnt_id_backup = current->susfs_last_fake_mnt_id++;
 	}
 	// Seems no need to reorder the mnt group id for mounts after copy_mnt_ns();
 
 	// Make all our sus mounts to be cloned private, so that propagation won't happen when they are being umounted,
 	// and let try_umount() to decide what to umount for matched process.
-	if (unlikely(mnt->mnt.mnt_root->d_inode->i_state & 33554432)) {
+	if (unlikely(mnt->mnt.mnt_root->d_inode->i_state & INODE_STATE_SUS_MOUNT)) {
 		flag &= (~CL_SLAVE | ~CL_SHARED_TO_SLAVE | ~CL_MAKE_SHARED | CL_PRIVATE);
 	}
 #endif
@@ -3380,24 +3394,25 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 
 		// Here We are only interested in processes of which original mnt namespace belongs to zygote
 	// Also we just make use of existing 'p' and 'q' mount pointer, no need to delcare extra mount pointer
-	if (likely(current->android_kabi_reserved1 & 1)) {
+	if (likely(current->susfs_task_state & TASK_STRUCT_IS_ZYGOTE)) {
 		first_entry_mnt_id = list_first_entry(&new_ns->list, struct mount, mnt_list)->mnt_id;
 		list_for_each_entry(q, &new_ns->list, mnt_list) {
-			if (unlikely(q->mnt.mnt_root->d_inode->i_state & 33554432))
+			if (unlikely(q->mnt.mnt_root->d_inode->i_state & INODE_STATE_SUS_MOUNT))
 				continue;
-			q->mnt.android_kabi_reserved1 = first_entry_mnt_id++;
+			q->mnt.susfs_mnt_id_backup = first_entry_mnt_id++;
 			if (q->mnt_master) {
 				if (likely(last_mnt_master_group_id != q->mnt_master->mnt_group_id)) {
-					q->mnt.android_kabi_reserved2 = first_entry_mnt_master_group_id++;
+					q->mnt.susfs_mnt_group_id_backup = first_entry_mnt_master_group_id++;
 				} else {
-					q->mnt.android_kabi_reserved2 = first_entry_mnt_master_group_id;
+					q->mnt.susfs_mnt_group_id_backup = first_entry_mnt_master_group_id;
 				}
-				last_mnt_master_group_id = q->mnt.android_kabi_reserved2;
+				last_mnt_master_group_id = q->mnt.susfs_mnt_group_id_backup;
 			}
 		}
 	}
-	// Assign the last fake mnt_id to current->android_kabi_reserved2 for later use.
+	// Assign the last fake mnt_id to current->susfs_last_fake_mnt_id for later use.
 	// should be fine here assuming zygote is forking/unsharing app in one single thread.
+	current->susfs_last_fake_mnt_id = first_entry_mnt_id;
 	// Or should we put a lock here?
 	current->android_kabi_reserved2 = first_entry_mnt_id;
 #endif
