@@ -27,6 +27,9 @@
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
 
 #define SEQ_PUT_DEC(str, val) \
 		seq_put_decimal_ull_width(m, str, (val) << (PAGE_SHIFT-10), 8)
@@ -364,9 +367,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 	if (file) {
 		struct inode *inode = file_inode(vma->vm_file);
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-		if (unlikely(inode->i_state & 67108864)) {
-			dev = inode->android_kabi_reserved2;
-			ino = inode->android_kabi_reserved1;
+		if (unlikely(inode->i_mapping->flags & BIT_SUS_KSTAT)) {
+			susfs_sus_ino_for_show_map_vma(inode->i_ino, &dev, &ino);
 			goto bypass_orig_flow;
 		}
 #endif

@@ -36,7 +36,7 @@
 void generic_fillattr(struct inode *inode, struct kstat *stat)
 {
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-	if (unlikely(inode->i_state & INODE_STATE_SUS_KSTAT)) {
+	if (unlikely(inode->i_mapping->flags & BIT_SUS_KSTAT)) {
 		susfs_sus_ino_for_generic_fillattr(inode->i_ino, stat);
 		return;
 	}

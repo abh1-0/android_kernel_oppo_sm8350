@@ -406,7 +406,7 @@ retry:
 	inode = d_backing_inode(path.dentry);
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (likely(current_cred()->user->android_kabi_reserved1 & 16777216) && unlikely(inode->i_state & 16777216)) {
+	if (susfs_is_inode_sus_path(inode)) {
 		path_put(&path);
 		res = -ENOENT;
 		goto out;
@@ -769,7 +769,7 @@ static int do_dentry_open(struct file *f,
 	f->f_mapping = inode->i_mapping;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (unlikely(inode->i_state & INODE_STATE_SUS_PATH) && likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC)) {
+	if (susfs_is_inode_sus_path(inode)) {
 		return -ENOENT;
 	}
 #endif

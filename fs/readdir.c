@@ -217,6 +217,7 @@ struct linux_dirent {
 struct getdents_callback {
 	struct dir_context ctx;
 	struct linux_dirent __user * current_dir;
+	struct dentry *dentry;
 	int prev_reclen;
 	int count;
 	int error;
@@ -232,6 +233,13 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 	int reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,
 		sizeof(long));
 	int prev_reclen;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	if (susfs_is_sus_android_data_d_name_found(name) ||
+		susfs_is_sus_sdcard_d_name_found(name)) {
+		return 0;
+	}
+#endif
 
 	buf->error = verify_dirent_name(name, namlen);
 	if (unlikely(buf->error))
@@ -289,6 +297,8 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 	if (!f.file)
 		return -EBADF;
 
+	buf.dentry = f.file->f_path.dentry;
+
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
@@ -308,6 +318,7 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 struct getdents_callback64 {
 	struct dir_context ctx;
 	struct linux_dirent64 __user * current_dir;
+	struct dentry *dentry;
 	int prev_reclen;
 	int count;
 	int error;
@@ -324,7 +335,8 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
 	int prev_reclen;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) && susfs_sus_ino_for_filldir64(ino)) {
+	if (susfs_is_sus_android_data_d_name_found(name) ||
+		susfs_is_sus_sdcard_d_name_found(name)) {
 		return 0;
 	}
 #endif
@@ -379,6 +391,8 @@ int ksys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent,
 	f = fdget_pos(fd);
 	if (!f.file)
 		return -EBADF;
+
+	buf.dentry = f.file->f_path.dentry;
 
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)

@@ -18,6 +18,10 @@
 #include "pnode.h"
 #include "internal.h"
 
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
+
 static __poll_t mounts_poll(struct file *file, poll_table *wait)
 {
 	struct seq_file *m = file->private_data;
@@ -103,7 +107,7 @@ static int show_vfsmnt(struct seq_file *m, struct vfsmount *mnt)
 	int err;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	if (unlikely(r->mnt.mnt_root->d_inode->i_state & 33554432))
+	if (unlikely(r->mnt.mnt_root->d_inode->i_mapping->flags & BIT_SUS_MOUNT))
 		return 0;
 #endif
 
@@ -144,10 +148,10 @@ static int show_mountinfo(struct seq_file *m, struct vfsmount *mnt)
 	int err;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	if (unlikely(r->mnt.mnt_root->d_inode->i_state & 33554432))
+	if (unlikely(r->mnt.mnt_root->d_inode->i_mapping->flags & BIT_SUS_MOUNT))
 		return 0;
-	if (likely(r->mnt.android_kabi_reserved1)) { // if it has fake_mnt_id, then its mnt_id and parent_mnt_id must be spoofed
-		seq_printf(m, "%i %i %u:%u ", r->mnt.android_kabi_reserved1, r->mnt_parent->mnt.android_kabi_reserved1,
+	if (likely(r->mnt.susfs_mnt_id_backup)) { // if it has fake_mnt_id, then its mnt_id and parent_mnt_id must be spoofed
+		seq_printf(m, "%llu %llu %u:%u ", r->mnt.susfs_mnt_id_backup, r->mnt_parent->mnt.susfs_mnt_id_backup,
 					MAJOR(sb->s_dev), MINOR(sb->s_dev));
 		goto bypass_orig_flow;
 	}
@@ -181,8 +185,8 @@ bypass_orig_flow:
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 		int master = r->mnt_master->mnt_group_id;
 		int dom = get_dominating_id(r, &p->root);
-		if (likely(r->mnt.android_kabi_reserved2)) {
-			seq_printf(m, " master:%i", r->mnt.android_kabi_reserved2);
+		if (likely(r->mnt.susfs_mnt_group_id_backup)) {
+			seq_printf(m, " master:%i", r->mnt.susfs_mnt_group_id_backup);
 		} else {
 			seq_printf(m, " master:%i", master);
 			if (dom && dom != master)
@@ -232,7 +236,7 @@ static int show_vfsstat(struct seq_file *m, struct vfsmount *mnt)
 	int err;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	if (unlikely(r->mnt.mnt_root->d_inode->i_state & 33554432))
+	if (unlikely(r->mnt.mnt_root->d_inode->i_mapping->flags & BIT_SUS_MOUNT))
 		return 0;
 #endif
 

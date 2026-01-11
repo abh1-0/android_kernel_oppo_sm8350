@@ -1249,13 +1249,9 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 	struct new_utsname tmp;
 
 	down_read(&uts_sem);
-#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-	if (likely(!susfs_spoof_uname(&tmp)))
-		goto bypass_orig_flow;
-#endif
 	memcpy(&tmp, utsname(), sizeof(tmp));
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-bypass_orig_flow:
+	susfs_spoof_uname(&tmp);
 #endif
 	up_read(&uts_sem);
 	if (copy_to_user(name, &tmp, sizeof(tmp)))
@@ -2466,7 +2462,8 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 #ifdef CONFIG_KSU_SUSFS
 	if (option == 0xDEADBEEF) {
 		int __user *user_error = (int __user *)arg5;
-		int ksu_error = -1;
+		int ksu_error = 0;
+		unsigned long user_ptr = arg3;
 
 		/* userspace tool always passes this, but be tolerant */
 		if (!user_error)
@@ -2482,16 +2479,35 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		switch (arg2) {
 		case CMD_SUSFS_ADD_SUS_PATH:
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-			ksu_error = susfs_add_sus_path(
-				(struct st_susfs_sus_path __user *)arg3);
+			susfs_add_sus_path((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif
 			break;
-		case CMD_SUSFS_ADD_SUS_MOUNT:
+		case CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH:
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+			susfs_set_i_state_on_external_dir((void __user **)&user_ptr);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_SET_SDCARD_ROOT_PATH:
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+			susfs_set_i_state_on_external_dir((void __user **)&user_ptr);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_ADD_SUS_PATH_LOOP:
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+			susfs_add_sus_path_loop((void __user **)&user_ptr);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS:
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-			ksu_error = susfs_add_sus_mount(
-				(struct st_susfs_sus_mount __user *)arg3);
+			susfs_set_hide_sus_mnts_for_all_procs((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif
@@ -2499,47 +2515,61 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		case CMD_SUSFS_ADD_SUS_KSTAT:
 		case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-			ksu_error = susfs_add_sus_kstat(
-				(struct st_susfs_sus_kstat __user *)arg3);
+			susfs_add_sus_kstat((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif
 			break;
 		case CMD_SUSFS_UPDATE_SUS_KSTAT:
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-			ksu_error = susfs_update_sus_kstat(
-				(struct st_susfs_sus_kstat __user *)arg3);
-#else
-			ksu_error = -1;
-#endif
-			break;
-		case CMD_SUSFS_ADD_TRY_UMOUNT:
-#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-			ksu_error = susfs_add_try_umount(
-				(struct st_susfs_try_umount __user *)arg3);
+			susfs_update_sus_kstat((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif
 			break;
 		case CMD_SUSFS_SET_UNAME:
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-			ksu_error = susfs_set_uname(
-				(struct st_susfs_uname __user *)arg3);
+			susfs_set_uname((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif
 			break;
 		case CMD_SUSFS_ENABLE_LOG:
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
-			susfs_set_log(!!arg3);
-			ksu_error = 0;
+			susfs_enable_log((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif
 			break;
-		case CMD_SUSFS_SUS_SU:
-#ifdef CONFIG_KSU_SUSFS_SUS_SU
-			ksu_error = susfs_sus_su((struct st_sus_su __user *)arg3);
+		case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+			susfs_set_cmdline_or_bootconfig((void __user **)&user_ptr);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_ADD_OPEN_REDIRECT:
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+			susfs_add_open_redirect((void __user **)&user_ptr);
+#else
+			ksu_error = -1;
+#endif
+			break;
+		case CMD_SUSFS_SHOW_VERSION:
+			susfs_show_version((void __user **)&user_ptr);
+			break;
+		case CMD_SUSFS_SHOW_ENABLED_FEATURES:
+			susfs_get_enabled_features((void __user **)&user_ptr);
+			break;
+		case CMD_SUSFS_SHOW_VARIANT:
+			susfs_show_variant((void __user **)&user_ptr);
+			break;
+		case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING:
+			susfs_set_avc_log_spoofing((void __user **)&user_ptr);
+			break;
+		case CMD_SUSFS_ADD_SUS_MAP:
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+			susfs_add_sus_map((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif
