@@ -622,6 +622,10 @@ SYSCALL_DEFINE1(setuid, uid_t, uid)
 }
 
 
+#ifdef CONFIG_KSU_MANUAL_HOOK
+extern int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid);
+#endif
+
 /*
  * This function implements a generic ability to update ruid, euid,
  * and suid.  This allows you to implement the 4.4 compatible seteuid().
@@ -633,6 +637,10 @@ long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 	struct cred *new;
 	int retval;
 	kuid_t kruid, keuid, ksuid;
+
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	(void)ksu_handle_setresuid(ruid, euid, suid);
+#endif
 
 	kruid = make_kuid(ns, ruid);
 	keuid = make_kuid(ns, euid);
@@ -2505,9 +2513,9 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 			ksu_error = -1;
 #endif
 			break;
-		case CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS:
+		case CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS:
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-			susfs_set_hide_sus_mnts_for_all_procs((void __user **)&user_ptr);
+			susfs_set_hide_sus_mnts_for_non_su_procs((void __user **)&user_ptr);
 #else
 			ksu_error = -1;
 #endif

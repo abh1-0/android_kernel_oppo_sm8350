@@ -6,6 +6,18 @@
 #include <linux/random.h>
 #include <linux/cred.h>
 #include <linux/sus_su.h>
+#include "../../KernelSU/kernel/allowlist.h"
+#include "../../KernelSU/kernel/app_profile.h"
+
+bool susfs_is_allow_su(void)
+{
+	return __ksu_is_allow_uid_for_current(current_uid().val);
+}
+
+void escape_to_root(void)
+{
+	escape_with_root_profile();
+}
 
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 extern bool susfs_is_log_enabled __read_mostly;

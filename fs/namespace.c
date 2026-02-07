@@ -4092,3 +4092,35 @@ const struct proc_ns_operations mntns_operations = {
 	.install	= mntns_install,
 	.owner		= mntns_owner,
 };
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+/* Reorder the mnt_id after all sus mounts are umounted during ksu_handle_setuid() */
+void susfs_reorder_mnt_id(void) {
+	struct mnt_namespace *mnt_ns = current->nsproxy->mnt_ns;
+	struct mount *mnt;
+	int first_mnt_id = 0;
+	bool first = true;
+
+	if (!mnt_ns) {
+		return;
+	}
+
+	get_mnt_ns(mnt_ns);
+
+	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
+		if (first) {
+			first_mnt_id = mnt->mnt_id;
+			first = false;
+		}
+		if (mnt->mnt_id == DEFAULT_KSU_MNT_ID) {
+			continue;
+		}
+		if (mnt->mnt.susfs_mnt_id_backup == 0) {
+			WRITE_ONCE(mnt->mnt.susfs_mnt_id_backup, READ_ONCE(mnt->mnt_id));
+		}
+		WRITE_ONCE(mnt->mnt_id, first_mnt_id++);
+	}
+
+	put_mnt_ns(mnt_ns);
+}
+#endif
