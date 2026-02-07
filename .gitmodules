@@ -1,4 +1,4 @@
 [submodule "KernelSU"]
 	path = KernelSU
-	url = https://github.com/tqmane/SukiSU-Ultra.git
+	url = https://github.com/tqmane/ReSukiSU
 	branch = main
