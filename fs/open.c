@@ -39,8 +39,14 @@
 #include <linux/susfs.h>
 #endif
 
+#ifdef CONFIG_KSU_MANUAL_HOOK
+__attribute__((hot)) extern int
+ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
+		     int *flags);
+#endif
+
 int do_truncate(struct dentry *dentry, loff_t length, unsigned int time_attrs,
-	struct file *filp)
+		struct file *filp)
 {
 	int ret;
 	struct iattr newattrs;
@@ -128,7 +134,7 @@ long do_sys_truncate(const char __user *pathname, loff_t length)
 	struct path path;
 	int error;
 
-	if (length < 0)	/* sorry, but loff_t says... */
+	if (length < 0) /* sorry, but loff_t says... */
 		return -EINVAL;
 
 retry:
@@ -150,7 +156,8 @@ SYSCALL_DEFINE2(truncate, const char __user *, path, long, length)
 }
 
 #ifdef CONFIG_COMPAT
-COMPAT_SYSCALL_DEFINE2(truncate, const char __user *, path, compat_off_t, length)
+COMPAT_SYSCALL_DEFINE2(truncate, const char __user *, path, compat_off_t,
+		       length)
 {
 	return do_sys_truncate(path, length);
 }
@@ -196,7 +203,8 @@ long do_sys_ftruncate(unsigned int fd, loff_t length, int small)
 	if (!error)
 		error = security_path_truncate(&f.file->f_path);
 	if (!error)
-		error = do_truncate(dentry, length, ATTR_MTIME|ATTR_CTIME, f.file);
+		error = do_truncate(dentry, length, ATTR_MTIME | ATTR_CTIME,
+				    f.file);
 	sb_end_write(inode->i_sb);
 out_putf:
 	fdput(f);
@@ -229,7 +237,6 @@ SYSCALL_DEFINE2(ftruncate64, unsigned int, fd, loff_t, length)
 }
 #endif /* BITS_PER_LONG == 32 */
 
-
 int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 {
 	struct inode *inode = file_inode(file);
@@ -248,8 +255,7 @@ int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 		return -EOPNOTSUPP;
 
 	/* Punch hole must have keep size set */
-	if ((mode & FALLOC_FL_PUNCH_HOLE) &&
-	    !(mode & FALLOC_FL_KEEP_SIZE))
+	if ((mode & FALLOC_FL_PUNCH_HOLE) && !(mode & FALLOC_FL_KEEP_SIZE))
 		return -EOPNOTSUPP;
 
 	/* Collapse range should only be used exclusively. */
@@ -258,8 +264,7 @@ int vfs_fallocate(struct file *file, int mode, loff_t offset, loff_t len)
 		return -EINVAL;
 
 	/* Insert range should only be used exclusively. */
-	if ((mode & FALLOC_FL_INSERT_RANGE) &&
-	    (mode & ~FALLOC_FL_INSERT_RANGE))
+	if ((mode & FALLOC_FL_INSERT_RANGE) && (mode & ~FALLOC_FL_INSERT_RANGE))
 		return -EINVAL;
 
 	/* Unshare range should only be used with allocate mode. */
@@ -358,7 +363,7 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
 	int res;
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
 
-	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+	if (mode & ~S_IRWXO) /* where's F_OK, X_OK, W_OK, R_OK? */
 		return -EINVAL;
 
 	override_cred = prepare_creds();
@@ -454,6 +459,9 @@ out:
 
 SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 {
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+#endif
 	return do_faccessat(dfd, filename, mode);
 }
 
@@ -618,8 +626,8 @@ retry:
 	return error;
 }
 
-SYSCALL_DEFINE3(fchmodat, int, dfd, const char __user *, filename,
-		umode_t, mode)
+SYSCALL_DEFINE3(fchmodat, int, dfd, const char __user *, filename, umode_t,
+		mode)
 {
 	return do_fchmodat(dfd, filename, mode);
 }
@@ -642,14 +650,14 @@ static int chown_common(const struct path *path, uid_t user, gid_t group)
 	gid = make_kgid(current_user_ns(), group);
 
 retry_deleg:
-	newattrs.ia_valid =  ATTR_CTIME;
-	if (user != (uid_t) -1) {
+	newattrs.ia_valid = ATTR_CTIME;
+	if (user != (uid_t)-1) {
 		if (!uid_valid(uid))
 			return -EINVAL;
 		newattrs.ia_valid |= ATTR_UID;
 		newattrs.ia_uid = uid;
 	}
-	if (group != (gid_t) -1) {
+	if (group != (gid_t)-1) {
 		if (!gid_valid(gid))
 			return -EINVAL;
 		newattrs.ia_valid |= ATTR_GID;
@@ -661,7 +669,8 @@ retry_deleg:
 	inode_lock(inode);
 	error = security_path_chown(path, uid, gid);
 	if (!error)
-		error = notify_change(path->dentry, &newattrs, &delegated_inode);
+		error = notify_change(path->dentry, &newattrs,
+				      &delegated_inode);
 	inode_unlock(inode);
 	if (delegated_inode) {
 		error = break_deleg_wait(&delegated_inode);
@@ -714,7 +723,8 @@ SYSCALL_DEFINE3(chown, const char __user *, filename, uid_t, user, gid_t, group)
 	return do_fchownat(AT_FDCWD, filename, user, group, 0);
 }
 
-SYSCALL_DEFINE3(lchown, const char __user *, filename, uid_t, user, gid_t, group)
+SYSCALL_DEFINE3(lchown, const char __user *, filename, uid_t, user, gid_t,
+		group)
 {
 	return do_fchownat(AT_FDCWD, filename, user, group,
 			   AT_SYMLINK_NOFOLLOW);
@@ -757,8 +767,7 @@ static inline bool shmem_file_dup(struct file *file)
 }
 #endif
 
-static int do_dentry_open(struct file *f,
-			  struct inode *inode,
+static int do_dentry_open(struct file *f, struct inode *inode,
 			  int (*open)(struct inode *, struct file *))
 {
 	static const struct file_operations empty_fops = {};
@@ -832,10 +841,10 @@ static int do_dentry_open(struct file *f,
 	if ((f->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)
 		i_readcount_inc(inode);
 	if ((f->f_mode & FMODE_READ) &&
-	     likely(f->f_op->read || f->f_op->read_iter))
+	    likely(f->f_op->read || f->f_op->read_iter))
 		f->f_mode |= FMODE_CAN_READ;
 	if ((f->f_mode & FMODE_WRITE) &&
-	     likely(f->f_op->write || f->f_op->write_iter))
+	    likely(f->f_op->write || f->f_op->write_iter))
 		f->f_mode |= FMODE_CAN_WRITE;
 
 	f->f_write_hint = WRITE_LIFE_NOT_SET;
@@ -855,7 +864,8 @@ static int do_dentry_open(struct file *f,
 	 */
 	if (f->f_mode & FMODE_WRITE) {
 #ifdef CONFIG_CONT_PTE_HUGEPAGE
-		CHP_BUG_ON(inode->i_sb->s_magic == EROFS_SUPER_MAGIC_V1 && inode->may_cont_pte);
+		CHP_BUG_ON(inode->i_sb->s_magic == EROFS_SUPER_MAGIC_V1 &&
+			   inode->may_cont_pte);
 #endif
 		if (filemap_nr_thps(inode->i_mapping))
 			truncate_pagecache(inode, 0);
@@ -895,22 +905,32 @@ static int do_dentry_open(struct file *f,
 			if (!suffix)
 				goto done;
 
-			if (!strcmp(suffix, ".so") || !strcmp(suffix, ".odex") ||
-				!strcmp(suffix, ".ttf") || !strcmp(suffix, ".ttc") ||
-				!strcmp(suffix, ".otf") ||
-				!strcmp(f->f_path.dentry->d_name.name, "OplusLauncher.apk") ||
-			    !strcmp(f->f_path.dentry->d_name.name, "OplusExSystemService.apk") ||
-			    !strcmp(f->f_path.dentry->d_name.name, "SystemUI.apk") ||
-			    !strcmp(f->f_path.dentry->d_name.name, "framework-res.apk") ||
-			    !strcmp(f->f_path.dentry->d_name.name, "oplus-framework-res.apk") ||
-			    !strcmp(f->f_path.dentry->d_name.name, "OplusAppPlatform.apk") ||
-				(supported_oat_hugepage && !strcmp(f->f_path.dentry->d_name.name, "boot-framework.oat"))) {
+			if (!strcmp(suffix, ".so") ||
+			    !strcmp(suffix, ".odex") ||
+			    !strcmp(suffix, ".ttf") ||
+			    !strcmp(suffix, ".ttc") ||
+			    !strcmp(suffix, ".otf") ||
+			    !strcmp(f->f_path.dentry->d_name.name,
+				    "OplusLauncher.apk") ||
+			    !strcmp(f->f_path.dentry->d_name.name,
+				    "OplusExSystemService.apk") ||
+			    !strcmp(f->f_path.dentry->d_name.name,
+				    "SystemUI.apk") ||
+			    !strcmp(f->f_path.dentry->d_name.name,
+				    "framework-res.apk") ||
+			    !strcmp(f->f_path.dentry->d_name.name,
+				    "oplus-framework-res.apk") ||
+			    !strcmp(f->f_path.dentry->d_name.name,
+				    "OplusAppPlatform.apk") ||
+			    (supported_oat_hugepage &&
+			     !strcmp(f->f_path.dentry->d_name.name,
+				     "boot-framework.oat"))) {
 				hugepage = NORMAL_HUGE;
 				goto done;
 			}
 			if (!strcmp(suffix, ".jar"))
 				hugepage = JAR_HUGE;
-done:
+		done:
 			if (hugepage) {
 				init_cont_endio_spinlock(inode);
 				smp_wmb();
@@ -1029,7 +1049,7 @@ struct file *dentry_open(const struct path *path, int flags,
 EXPORT_SYMBOL_NS(dentry_open, ANDROID_GKI_VFS_EXPORT_ONLY);
 
 struct file *open_with_fake_path(const struct path *path, int flags,
-				struct inode *inode, const struct cred *cred)
+				 struct inode *inode, const struct cred *cred)
 {
 	struct file *f = alloc_empty_file_noaccount(flags, cred);
 	if (!IS_ERR(f)) {
@@ -1046,7 +1066,8 @@ struct file *open_with_fake_path(const struct path *path, int flags,
 }
 EXPORT_SYMBOL(open_with_fake_path);
 
-static inline int build_open_flags(int flags, umode_t mode, struct open_flags *op)
+static inline int build_open_flags(int flags, umode_t mode,
+				   struct open_flags *op)
 {
 	int lookup_flags = 0;
 	int acc_mode = ACC_MODE(flags);
@@ -1150,7 +1171,7 @@ struct file *filp_open(const char *filename, int flags, umode_t mode)
 {
 	struct filename *name = getname_kernel(filename);
 	struct file *file = ERR_CAST(name);
-	
+
 	if (!IS_ERR(name)) {
 		file = file_open_name(name, flags, mode);
 		putname(name);
@@ -1220,7 +1241,8 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
  * Exactly like sys_open(), except that it doesn't set the
  * O_LARGEFILE flag.
  */
-COMPAT_SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
+COMPAT_SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t,
+		       mode)
 {
 	return do_sys_open(AT_FDCWD, filename, flags, mode);
 }
@@ -1229,7 +1251,8 @@ COMPAT_SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t,
  * Exactly like sys_openat(), except that it doesn't set the
  * O_LARGEFILE flag.
  */
-COMPAT_SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags, umode_t, mode)
+COMPAT_SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int,
+		       flags, umode_t, mode)
 {
 	return do_sys_open(dfd, filename, flags, mode);
 }
@@ -1284,8 +1307,7 @@ SYSCALL_DEFINE1(close, unsigned int, fd)
 	int retval = __close_fd(current->files, fd);
 
 	/* can't restart close syscall because file table entry was cleared */
-	if (unlikely(retval == -ERESTARTSYS ||
-		     retval == -ERESTARTNOINTR ||
+	if (unlikely(retval == -ERESTARTSYS || retval == -ERESTARTNOINTR ||
 		     retval == -ERESTARTNOHAND ||
 		     retval == -ERESTART_RESTARTBLOCK))
 		retval = -EINTR;
@@ -1312,7 +1334,7 @@ SYSCALL_DEFINE0(vhangup)
  * the caller didn't specify O_LARGEFILE.  On 64bit systems we force
  * on this flag in sys_open.
  */
-int generic_file_open(struct inode * inode, struct file * filp)
+int generic_file_open(struct inode *inode, struct file *filp)
 {
 	if (!(filp->f_flags & O_LARGEFILE) && i_size_read(inode) > MAX_NON_LFS)
 		return -EOVERFLOW;
@@ -1347,7 +1369,8 @@ EXPORT_SYMBOL(nonseekable_open);
  */
 int stream_open(struct inode *inode, struct file *filp)
 {
-	filp->f_mode &= ~(FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE | FMODE_ATOMIC_POS);
+	filp->f_mode &=
+		~(FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE | FMODE_ATOMIC_POS);
 	filp->f_mode |= FMODE_STREAM;
 	return 0;
 }
