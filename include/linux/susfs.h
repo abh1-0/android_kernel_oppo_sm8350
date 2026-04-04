@@ -8,7 +8,7 @@
 #include <linux/path.h>
 #include <linux/susfs_def.h>
 
-#define SUSFS_VERSION "v2.0.0"
+#define SUSFS_VERSION "v2.1.0"
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
 #define SUSFS_VARIANT "NON-GKI"
 #else
@@ -166,6 +166,7 @@ struct st_susfs_version {
 void susfs_set_i_state_on_external_dir(void __user **user_info);
 void susfs_add_sus_path(void __user **user_info);
 void susfs_add_sus_path_loop(void __user **user_info);
+void susfs_run_sus_path_loop(uid_t uid);
 bool susfs_is_inode_sus_path(struct inode *inode);
 bool susfs_is_sus_android_data_d_name_found(const char *d_name);
 bool susfs_is_sus_sdcard_d_name_found(const char *d_name);
