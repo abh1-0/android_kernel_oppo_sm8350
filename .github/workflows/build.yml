@@ -20,51 +20,128 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex git gnupg gperf libssl-dev libxml2-utils lzop pngcrush zip zlib1g-dev libelf-dev
-
-      - name: Set up workspace structure
-        run: |
-          mkdir -p workspace/prebuilts-master/clang/host/linux-x86
-          mkdir -p workspace/prebuilts/gcc/linux-x86/aarch64
-          mkdir -p workspace/prebuilts/gcc/linux-x86/arm
-
-      - name: Clone AOSP Kernel Build Tools
-        run: |
-          git clone --depth=1 -b master-kernel-build-2021 https://android.googlesource.com/kernel/build workspace/build
+          sudo apt-get install -y bc bison build-essential curl flex git gnupg gperf \
+            imagemagick lib32z1-dev libssl-dev libxml2-utils lzop pngcrush rsync \
+            schedtool squashfs-tools xsltproc zip zlib1g-dev libelf-dev python3 cpio
 
       - name: Clone Clang (r416183b)
         run: |
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b workspace/prebuilts-master/clang/host/linux-x86/clang-r416183b
+          mkdir -p toolchains/clang
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b toolchains/clang
 
       - name: Clone GCC 4.9 (AArch64 & Arm32)
         run: |
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 workspace/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 workspace/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+          mkdir -p toolchains/gcc-arm64 toolchains/gcc-arm32
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchains/gcc-arm64
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchains/gcc-arm32
 
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          path: workspace/kernel/msm-5.4
+          path: kernel
+
+      - name: Fix broken symlinks
+        run: |
+          cd kernel
+          echo "=== Removing broken symlinks ==="
+          # Find and remove all broken symlinks so make doesn't crash traversing them
+          find . -xtype l -delete 2>/dev/null || true
+          echo "=== Broken symlinks cleaned ==="
+
+      - name: Generate defconfig
+        run: |
+          cd kernel
+          export PATH=$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH
+          export PATH=$GITHUB_WORKSPACE/toolchains/gcc-arm64/bin:$PATH
+          export PATH=$GITHUB_WORKSPACE/toolchains/gcc-arm32/bin:$PATH
+
+          KERN_CONFIGS=arch/arm64/configs
+          VENDOR_CONFIGS=${KERN_CONFIGS}/vendor
+
+          # The QGKI defconfig is assembled by merging:
+          #   1. gki_defconfig (base GKI config)
+          #   2. lahaina_GKI.config (Qualcomm SM8350 GKI fragment)
+          #   3. lahaina_QGKI.config (Qualcomm SM8350 QGKI fragment - includes our SukiSU/battery tweaks)
+          echo "=== Merging defconfig fragments ==="
+          ARCH=arm64 scripts/kconfig/merge_config.sh \
+            ${KERN_CONFIGS}/gki_defconfig \
+            ${VENDOR_CONFIGS}/lahaina_GKI.config \
+            ${VENDOR_CONFIGS}/lahaina_QGKI.config
+
+          # Move the merged .config into the out directory
+          mkdir -p out
+          mv .config out/.config
+
+          # Run olddefconfig to resolve any missing symbols
+          make -j$(nproc) \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
+            LD=ld.lld \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            HOSTCC=clang \
+            HOSTLD=ld.lld \
+            KCFLAGS="-D__ANDROID_COMMON_KERNEL__" \
+            O=out \
+            olddefconfig
+
+          # Enable DT overlay support
+          scripts/config --file out/.config -e BUILD_ARM64_DT_OVERLAY
+          make -j$(nproc) \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
+            LD=ld.lld \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            HOSTCC=clang \
+            HOSTLD=ld.lld \
+            KCFLAGS="-D__ANDROID_COMMON_KERNEL__" \
+            O=out \
+            olddefconfig
 
       - name: Compile Kernel
         run: |
-          cd workspace
-          export PATH=$(pwd)/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$PATH
-          export PATH=$(pwd)/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$PATH
-          export PATH=$(pwd)/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH
-          BUILD_CONFIG=kernel/msm-5.4/build.config.lemonade VARIANT=qgki LTO=full BUILD_KERNEL=1 build/build.sh
+          cd kernel
+          export PATH=$GITHUB_WORKSPACE/toolchains/clang/bin:$PATH
+          export PATH=$GITHUB_WORKSPACE/toolchains/gcc-arm64/bin:$PATH
+          export PATH=$GITHUB_WORKSPACE/toolchains/gcc-arm32/bin:$PATH
+
+          echo "=== Starting kernel compilation ==="
+          make -j$(nproc) \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
+            LD=ld.lld \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            HOSTCC=clang \
+            HOSTLD=ld.lld \
+            KCFLAGS="-D__ANDROID_COMMON_KERNEL__" \
+            O=out \
+            Image modules dtbs 2>&1 | tail -100
+
+          echo "=== Kernel compilation finished ==="
+          ls -la out/arch/arm64/boot/Image
 
       - name: Package with AnyKernel3
         run: |
-          cd workspace
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-          # Copy the compiled kernel Image to AnyKernel3 folder
-          cp out/msm-5.4-lahaina-qgki/dist/Image AnyKernel3/
-          # If dtbo.img is compiled, copy it too
-          if [ -f out/msm-5.4-lahaina-qgki/dist/dtbo.img ]; then
-            cp out/msm-5.4-lahaina-qgki/dist/dtbo.img AnyKernel3/
+          cp kernel/out/arch/arm64/boot/Image AnyKernel3/
+          # Copy DTBs if they exist
+          if ls kernel/out/arch/arm64/boot/dts/vendor/oplus/lemonadev/*.dtb* 1>/dev/null 2>&1; then
+            cp kernel/out/arch/arm64/boot/dts/vendor/oplus/lemonadev/*.dtb* AnyKernel3/
           fi
-          # Zip the installer package
+          if [ -f kernel/out/arch/arm64/boot/dts/vendor/oplus/lemonadev/dtbo.img ]; then
+            cp kernel/out/arch/arm64/boot/dts/vendor/oplus/lemonadev/dtbo.img AnyKernel3/
+          fi
           cd AnyKernel3
           zip -r9 ../kernel-lemonade-flashable.zip * -x .git* README.md*
 
@@ -72,4 +149,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SukiSU-Kernel-Lemonade
-          path: workspace/kernel-lemonade-flashable.zip
+          path: kernel-lemonade-flashable.zip
