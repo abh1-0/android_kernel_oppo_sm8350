@@ -323,6 +323,12 @@ static int mounts_open_common(struct inode *inode, struct file *file,
 	p->show = show;
 	p->cached_event = ~0ULL;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT_MNT_ID_REORDER
+	if (uid_matches_proc_need_to_reorder_mnt_id()) {
+		susfs_add_mnt_id_recorder(p->ns);
+	}
+#endif
+
 	return 0;
 
  err_put_path:
@@ -337,6 +343,13 @@ static int mounts_release(struct inode *inode, struct file *file)
 {
 	struct seq_file *m = file->private_data;
 	struct proc_mounts *p = m->private;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT_MNT_ID_REORDER
+	if (uid_matches_proc_need_to_reorder_mnt_id()) {
+		susfs_remove_mnt_id_recorder();
+	}
+#endif
+
 	path_put(&p->root);
 	put_mnt_ns(p->ns);
 	return seq_release_private(inode, file);

@@ -1,0 +1,62 @@
+name: Build Kernel
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Kernel (lemonade)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex git gnupg gperf libssl-dev libxml2-utils lzop pngcrush zip zlib1g-dev libelf-dev
+
+      - name: Set up workspace structure
+        run: |
+          mkdir -p workspace/prebuilts-master/clang/host/linux-x86
+          mkdir -p workspace/prebuilts/gcc/linux-x86/aarch64
+          mkdir -p workspace/prebuilts/gcc/linux-x86/arm
+
+      - name: Clone AOSP Kernel Build Tools
+        run: |
+          git clone --depth=1 https://android.googlesource.com/kernel/build workspace/build
+
+      - name: Clone Clang (r416183b)
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/clang-r416183b workspace/prebuilts-master/clang/host/linux-x86/clang-r416183b
+
+      - name: Clone GCC 4.9 (AArch64 & Arm32)
+        run: |
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 workspace/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 workspace/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9
+
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          path: workspace/kernel/msm-5.4
+          submodules: recursive
+
+      - name: Compile Kernel
+        run: |
+          cd workspace
+          export PATH=$(pwd)/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$PATH
+          export PATH=$(pwd)/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin:$PATH
+          export PATH=$(pwd)/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH
+          BUILD_CONFIG=kernel/msm-5.4/build.config.lemonade VARIANT=qgki LTO=full BUILD_KERNEL=1 build/build.sh
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-lemonade
+          path: workspace/out/msm-5.4-lahaina-qgki/dist/
