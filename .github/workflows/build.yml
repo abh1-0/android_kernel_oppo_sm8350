@@ -43,10 +43,24 @@ jobs:
       - name: Fix broken symlinks
         run: |
           cd kernel
-          echo "=== Removing broken symlinks ==="
-          # Find and remove all broken symlinks so make doesn't crash traversing them
-          find . -xtype l -delete 2>/dev/null || true
-          echo "=== Broken symlinks cleaned ==="
+          echo "=== Fixing broken symlinks with placeholders ==="
+          # Find all broken symlinks
+          for link in $(find . -xtype l); do
+            echo "Stubbing broken symlink: $link"
+            rm -f "$link"
+            if [[ "$link" == *.c ]] || [[ "$link" == *.h ]] || [[ "$link" == *.sh ]] || [[ "$link" == *.py ]] || [[ "$link" == *.mk ]]; then
+              # Stub file
+              mkdir -p "$(dirname "$link")"
+              touch "$link"
+            else
+              # Stub directory with Kconfig/Makefile/Kbuild
+              mkdir -p "$link"
+              touch "$link/Kconfig"
+              touch "$link/Makefile"
+              touch "$link/Kbuild"
+            fi
+          done
+          echo "=== Symlinks stubbed successfully ==="
 
       - name: Generate defconfig
         run: |
