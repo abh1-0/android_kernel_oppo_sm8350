@@ -55,8 +55,22 @@ jobs:
           export PATH=$(pwd)/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin:$PATH
           BUILD_CONFIG=kernel/msm-5.4/build.config.lemonade VARIANT=qgki LTO=full BUILD_KERNEL=1 build/build.sh
 
-      - name: Upload Build Artifacts
+      - name: Package with AnyKernel3
+        run: |
+          cd workspace
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          # Copy the compiled kernel Image to AnyKernel3 folder
+          cp out/msm-5.4-lahaina-qgki/dist/Image AnyKernel3/
+          # If dtbo.img is compiled, copy it too
+          if [ -f out/msm-5.4-lahaina-qgki/dist/dtbo.img ]; then
+            cp out/msm-5.4-lahaina-qgki/dist/dtbo.img AnyKernel3/
+          fi
+          # Zip the installer package
+          cd AnyKernel3
+          zip -r9 ../kernel-lemonade-flashable.zip * -x .git* README.md*
+
+      - name: Upload Flashable Kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-lemonade
-          path: workspace/out/msm-5.4-lahaina-qgki/dist/
+          name: SukiSU-Kernel-Lemonade
+          path: workspace/kernel-lemonade-flashable.zip
