@@ -34,7 +34,7 @@ jobs:
 
       - name: Clone Clang (r416183b)
         run: |
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/clang-r416183b workspace/prebuilts-master/clang/host/linux-x86/clang-r416183b
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b workspace/prebuilts-master/clang/host/linux-x86/clang-r416183b
 
       - name: Clone GCC 4.9 (AArch64 & Arm32)
         run: |
