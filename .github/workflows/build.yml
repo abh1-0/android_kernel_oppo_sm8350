@@ -30,7 +30,7 @@ jobs:
 
       - name: Clone AOSP Kernel Build Tools
         run: |
-          git clone --depth=1 -b android11-release https://android.googlesource.com/kernel/build workspace/build
+          git clone --depth=1 -b master-kernel-build-2021 https://android.googlesource.com/kernel/build workspace/build
 
       - name: Clone Clang (r416183b)
         run: |
