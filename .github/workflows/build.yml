@@ -69,6 +69,10 @@ jobs:
           export PATH=$GITHUB_WORKSPACE/toolchains/gcc-arm64/bin:$PATH
           export PATH=$GITHUB_WORKSPACE/toolchains/gcc-arm32/bin:$PATH
 
+          # Clean the source tree completely first
+          make mrproper
+          mkdir -p out
+
           KERN_CONFIGS=arch/arm64/configs
           VENDOR_CONFIGS=${KERN_CONFIGS}/vendor
 
@@ -77,14 +81,10 @@ jobs:
           #   2. lahaina_GKI.config (Qualcomm SM8350 GKI fragment)
           #   3. lahaina_QGKI.config (Qualcomm SM8350 QGKI fragment - includes our SukiSU/battery tweaks)
           echo "=== Merging defconfig fragments ==="
-          ARCH=arm64 scripts/kconfig/merge_config.sh \
+          ARCH=arm64 scripts/kconfig/merge_config.sh -O out \
             ${KERN_CONFIGS}/gki_defconfig \
             ${VENDOR_CONFIGS}/lahaina_GKI.config \
             ${VENDOR_CONFIGS}/lahaina_QGKI.config
-
-          # Move the merged .config into the out directory
-          mkdir -p out
-          mv .config out/.config
 
           # Run olddefconfig to resolve any missing symbols
           make -j$(nproc) \
