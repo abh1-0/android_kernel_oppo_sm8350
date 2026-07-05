@@ -45,7 +45,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: workspace/kernel/msm-5.4
-          submodules: recursive
 
       - name: Compile Kernel
         run: |
